@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        // Docker Image name for the hospitality website
+        DOCKER_IMAGE = "hospitality-website"
+        // Your app’s port (replace 3000 with actual app port)
+        APP_PORT = "3000"
+    }
+
+    stages {
+        // Stage 1: Cloning the repository
+        stage('Clone Repository') {
+            steps {
+                git 'https://github.com/<your-username>/<your-repo>.git'  // Update with your actual GitHub repo
+            }
+        }
+
+        // Stage 2: Building Docker Image
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build Docker image with the given name and the current Jenkins build ID as tag
+                    dockerImage = docker.build("${DOCKER_IMAGE}:${env.BUILD_ID}")
+                }
+            }
+        }
+
+        // Stage 3: Testing Docker Image (optional)
+        stage('Test Docker Image') {
+            steps {
+                script {
+                    // Run the Docker container temporarily to check if it works
+                    dockerImage.run("-d -p ${APP_PORT}:${APP_PORT}").withRun { container ->
+                        // Wait for the container to start up
+                        sh "sleep 10"
+                        // Test if the app is running by making an HTTP request
+                        sh "curl http://localhost:${APP_PORT}"
+                    }
+                }
+            }
+        }
+
+        // Stage 4: Deploy Docker Container to Production
+        stage('Deploy to Production') {
+            steps {
+                script {
+                    // Stop and remove any old running containers
+                    sh 'docker stop $(docker ps -q --filter name=hospitality-container) || true'
+                    sh 'docker rm $(docker ps -a -q --filter name=hospitality-container) || true'
+                    
+                    // Run the new Docker container with the hospitality website
+                    dockerImage.run("-d -p 80:${APP_PORT} --name hospitality-container")
+                }
+            }
+        }
+    }
+
+    post {
+        // Clean up unused Docker resources to free up space
+        always {
+            echo "Cleaning up Docker resources"
+            sh 'docker system prune -f'
+        }
+    }
+}
